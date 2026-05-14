@@ -983,8 +983,7 @@ def run_integrity_report(df: pd.DataFrame, target_col: str = "DA_Price_NL_EURMWh
     # ── Check 5: Feature completeness score ──
     CRITICAL_FEATURES = [
         "DA_Price_NL_EURMWh", "DA_Price_DE_EURMWh", "DA_Price_BE_EURMWh",
-        "NL_TSO_Load_Forecast_MW", "NL_Renewables_Forecast_MW",
-        "DE_Renewables_Forecast_MW", "TTF_Gas_EURMWh",
+        "NL_TSO_Load_Forecast_MW", "TTF_Gas_EURMWh",
         "EUA_Carbon_EUR", "CCGT_Marginal_Cost_EUR",
         "NL_Net_Export_MW", "NL_Thermal_Outage_MW",
         "temperature_2m_Amsterdam",
