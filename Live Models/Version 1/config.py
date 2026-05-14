@@ -7,7 +7,7 @@ import os
 
 # --- DIRECTORIES ---
 LIVE_DIR    = "voltcast_ipi_live_v1"
-CACHE_DIR   = "voltcast_ipi_live_cache_v1"
+CACHE_DIR   = "voltcast_ipi_cache_v1"
 REPORT_DIR  = "voltcast_ipi_reports_v1"
 LOG_DIR     = "voltcast_ipi_logs_v1"
 

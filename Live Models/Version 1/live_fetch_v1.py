@@ -92,7 +92,7 @@ MASTER_INDEX_HOURLY = pd.date_range(
 # The model targets D+1 delivery rows only (see validate_delivery_day_coverage).
 
 # --- Directories ---
-CACHE_DIR   = "voltcast_ipi_live_cache_v1"
+CACHE_DIR   = "voltcast_ipi_cache_v1"
 LIVE_DIR    = "voltcast_ipi_live_v1"
 LOG_DIR     = "voltcast_ipi_logs_v1"
 for d in [CACHE_DIR, LIVE_DIR, LOG_DIR]:

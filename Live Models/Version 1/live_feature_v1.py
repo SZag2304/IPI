@@ -54,7 +54,7 @@ log = logging.getLogger("VoltCast.Features")
 # ================================================================================
 
 LIVE_DIR       = "voltcast_ipi_live_v1"
-CACHE_DIR      = "voltcast_ipi_live_cache_v1"
+CACHE_DIR      = "voltcast_ipi_cache_v1"
 FETCH_STATUS   = os.path.join(LIVE_DIR, "fetch_status.json")
 FEATURES_FILE  = os.path.join(LIVE_DIR, f"live_features_{RUN_DATE_STR}.parquet")
 FEAT_STATUS    = os.path.join(LIVE_DIR, "features_status.json")

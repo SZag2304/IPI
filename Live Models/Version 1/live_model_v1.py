@@ -53,7 +53,7 @@ RUN_DATE_STR = now_dutch.strftime("%Y%m%d")
 # UPDATED DIRECTORIES
 LOG_DIR     = "voltcast_ipi_logs_v1"
 LIVE_DIR    = "voltcast_ipi_live_v1"
-CACHE_DIR   = "voltcast_ipi_live_cache_v1"
+CACHE_DIR   = "voltcast_ipi_cache_v1"
 
 for d in [LOG_DIR, LIVE_DIR]:
     os.makedirs(d, exist_ok=True)
