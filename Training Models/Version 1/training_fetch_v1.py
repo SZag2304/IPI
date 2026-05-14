@@ -158,7 +158,7 @@ def fetch_or_cache(name: str, fetch_fn, *args, force_refresh=False):
 # ================================================================================
 
 def _ned_fetch_single_day(api_key: str, date_str: str, type_id: int,
-                          activity_id: int, label: str, max_retries: int = 4) -> pd.DataFrame:
+                          activity_id: int, label: str, max_retries: int = 8) -> pd.DataFrame:
     """
     Fetches one calendar day from NED. Designed to run in a thread pool.
     Uses local date strings to be leap-year safe (avoids UTC offset traps).
@@ -197,16 +197,23 @@ def _ned_fetch_single_day(api_key: str, date_str: str, type_id: int,
             elif r.status_code == 429:
                 wait = 2 ** attempt
                 time.sleep(wait)
+                continue
+
+            else:
+                # For 500, 502, 503 errors
+                time.sleep(2)
+                continue
 
         except requests.exceptions.RequestException:
-            time.sleep(2)
+            sleep_time = 2 ** attempt
+            time.sleep(sleep_time)
 
     log.error(f"NED FAILED: {label} on {date_str} after {max_retries} retries")
     return pd.DataFrame()
 
 
 def fetch_ned_stream(api_key: str, label: str, type_id: int,
-                     activity_id: int, max_workers: int = 6) -> pd.DataFrame:
+                     activity_id: int, max_workers: int = 4) -> pd.DataFrame:
     """
     Fetches a full NED stream by dispatching one thread per calendar day.
     Covers the full START_LOCAL → END_LOCAL range.
@@ -358,7 +365,7 @@ def fetch_entsoe_load_data() -> pd.DataFrame:
     return df
 
 
-# ── 4C. GENERATION FORECASTS ──────────────────────────────────────────────────
+'''# ── 4C. GENERATION FORECASTS ──────────────────────────────────────────────────
 
 def fetch_entsoe_generation_forecasts() -> pd.DataFrame:
     """
@@ -401,7 +408,7 @@ def fetch_entsoe_generation_forecasts() -> pd.DataFrame:
     except Exception as e:
         log.warning(f"  DE renewables forecast failed: {e}")
 
-    return df
+    return df'''
 
 
 # ── 4D. CROSS-BORDER FLOWS ────────────────────────────────────────────────────
@@ -682,7 +689,7 @@ def fetch_all_entsoe() -> pd.DataFrame:
         ("entsoe_nl_da_price",          fetch_entsoe_nl_da_price),
         ("entsoe_neighbor_da_prices",   fetch_entsoe_neighbor_da_prices),
         ("entsoe_load_data",            fetch_entsoe_load_data),
-        ("entsoe_generation_forecasts", fetch_entsoe_generation_forecasts),
+        #("entsoe_generation_forecasts", fetch_entsoe_generation_forecasts),
         ("entsoe_crossborder_flows",    fetch_entsoe_crossborder_flows),
         ("entsoe_imbalance_prices",     fetch_entsoe_imbalance_prices),
         ("entsoe_thermal_outages",      fetch_entsoe_thermal_outages), # 👈 MUST BE HERE

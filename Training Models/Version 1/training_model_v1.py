@@ -1009,7 +1009,7 @@ def seasonal_breakdown(predictions: pd.DataFrame):
         dacc  = (t_dir == p_dir).mean() * 100
         log.info(f"  {season:<22} {len(s):>6}  {mae:>7.2f}  {rmse:>7.2f}  {mbe:>+7.2f}  {dacc:>6.1f}%")
 
-    log.info()
+    print()
     for day_type in ["Weekday", "Weekend"]:
         s = df[df["day_type"] == day_type]
         if len(s) == 0: continue
