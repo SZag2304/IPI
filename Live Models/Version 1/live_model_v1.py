@@ -381,12 +381,12 @@ def build_day_summary(ptus: list, delivery_date: str,
 
     # Consecutive windows (Updated to rely on signal_strength strings, not regime_codes)
     buy_windows = _find_consecutive_windows(ptus, 
-        target_signals=["Strong BUY", "Moderate BUY"], 
+        target_signals=("Strong BUY", "Moderate BUY"), 
         min_ptus=config.MIN_PTUS_BUY_WINDOW, label="cheap"
     )
     
     avoid_windows = _find_consecutive_windows(ptus, 
-        target_signals=["Strong AVOID", "Moderate AVOID"], 
+        target_signals=("Strong AVOID", "Moderate AVOID"), 
         min_ptus=config.MIN_PTUS_AVOID_WINDOW, label="expensive"
     )
 
@@ -461,7 +461,7 @@ def build_day_summary(ptus: list, delivery_date: str,
     return summary
 
 
-def _find_consecutive_windows(ptus: list, target_signals: list, # regime_code: int,
+def _find_consecutive_windows(ptus: list, target_signals: tuple, # regime_code: int,
                                min_ptus: int, label: str) -> list:
     windows = []
     current_window = []
@@ -730,6 +730,10 @@ def run_live_predict() -> int:
     feat_ok, feat_info = check_features_status()
     if not feat_ok:
         write_prediction_status(False, "unknown", ["Feature engineering did not pass"])
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("FEATURE", "Fetch did not pass — features skipped",
+                            f"Delivery {feat_info.get('delivery_date')}\n"
+                            f"Alerts: {feat_info.get('alerts', [])}")
         return 1
 
     delivery_date    = feat_info["delivery_date"]
@@ -872,6 +876,11 @@ def run_live_predict() -> int:
 
     overall_pass = not any("CRITICAL" in a for a in alerts) and quality_pass
     write_prediction_status(overall_pass, delivery_date, alerts, summary)
+
+    if not overall_pass:
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("PREDICT", "Prediction pipeline failed", 
+                            f"Delivery {delivery_date}\nAlerts: {alerts}")
 
     return 0 if overall_pass else 1
 

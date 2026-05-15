@@ -751,6 +751,10 @@ def run_live_features() -> int:
     if not fetch_ok:
         write_features_status(False, str((now_dutch + pd.DateOffset(days=1)).date()),
                               0, 0, ["Fetch did not pass — features aborted"], False)
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("FEATURE", "Fetch did not pass — features skipped",
+                            f"Delivery {fetch_info.get('delivery_date')}\n"
+                            f"Alerts: {fetch_info.get('alerts', [])}")
         return 1
 
     delivery_date = fetch_info["delivery_date"]
@@ -849,6 +853,11 @@ def run_live_features() -> int:
         alerts=alerts,
         d1_price_confirmed=d1_price_confirmed
     )
+    
+    if not overall_pass:
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("FEATURE", "Feature engineering failed",
+                            f"Delivery {delivery_date}\nAlerts: {alerts}")
 
     log.info("\n" + "=" * 65)
     log.info("  FEATURE ENGINEERING COMPLETE")

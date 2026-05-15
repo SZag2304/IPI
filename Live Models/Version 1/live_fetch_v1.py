@@ -810,18 +810,24 @@ def fetch_weather_live(status: FetchStatus) -> pd.DataFrame:
                 df_city = pd.DataFrame(resp[i]["hourly"])
                 df_city["time"] = pd.to_datetime(df_city["time"]).dt.tz_localize("UTC")
                 df_city.set_index("time", inplace=True)
-                
-                # ── THE FIX: Force strict alignment before appending ──
-                # This guarantees every city has the exact same rows. Missing data 
-                # becomes NaN in its correct time slot, rather than shifting the whole column.
-                df_city = df_city.reindex(MASTER_INDEX_HOURLY)
-                
+
                 # Rename columns to match model expectations (e.g., temperature_2m_Amsterdam)
                 df_city.columns = [f"{col}_{city}" for col in df_city.columns]
 
                 city_frames.append(df_city)
                 
+                # ── THE FIX: Force strict alignment before appending ──
+                # This guarantees every city has the exact same rows. Missing data 
+                # becomes NaN in its correct time slot, rather than shifting the whole column.
+                # df_city = df_city.reindex(MASTER_INDEX_HOURLY) # This reindex is now handled by the full_idx reindex
+                
         if city_frames:
+            # Build a common hourly index spanning the full window across cities
+            full_idx = pd.date_range(
+                start=min(f.index.min() for f in city_frames),
+                end=max(f.index.max()  for f in city_frames),
+                freq="h", tz="UTC")
+            city_frames = [f.reindex(full_idx) for f in city_frames]
             # Concatenate all cities horizontally
             df_weather = pd.concat(city_frames, axis=1)
             # Resample from hourly to 15-min PTUs using forward-fill

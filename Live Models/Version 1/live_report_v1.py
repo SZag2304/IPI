@@ -7,6 +7,8 @@ import matplotlib.dates as mdates
 from fpdf import FPDF, XPos, YPos  
 import config
 
+DUTCH_TZ = "Europe/Amsterdam"
+
 # --- CONFIGURATION ---
 LIVE_DIR = "voltcast_ipi_live_v1"
 REPORT_DIR = "voltcast_ipi_reports_v1"
@@ -88,6 +90,9 @@ def generate_pdf(date_str):
             print("\n[CRITICAL ABORT] Pipeline failure detected in prediction_status.json!")
             print(f"Alerts: {status.get('alerts', ['Unknown error'])}")
             print("Aborting PDF generation to prevent delivering corrupted intelligence.\n")
+            from alerts import send_pipeline_alert
+            send_pipeline_alert("REPORT", "Report generation aborted due to prediction pipeline failure", 
+                                f"Delivery {date_str}\nAlerts: {status.get('alerts', ['Unknown error'])}")
             return
     else:
         print("Warning: prediction_status.json not found. Proceeding blindly...")
