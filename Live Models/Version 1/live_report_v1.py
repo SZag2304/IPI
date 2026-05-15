@@ -92,8 +92,9 @@ def generate_pdf(date_str):
             print(f"Alerts: {status.get('alerts', ['Unknown error'])}")
             print("Aborting PDF generation to prevent delivering corrupted intelligence.\n")
             from alerts import send_pipeline_alert
-            send_pipeline_alert("REPORT", "Report generation aborted due to prediction pipeline failure", 
-                                f"Delivery {date_str}\nAlerts: {status.get('alerts', ['Unknown error'])}")
+            msg = f"Pipeline failure detected in prediction_status.json!\nAlerts: {status.get('alerts', ['Unknown error'])}"
+            print(f"\n[CRITICAL ABORT] {msg}")
+            send_pipeline_alert("REPORT", "CRITICAL ABORT - Bad Upstream Data", msg)
             return
     else:
         print("Warning: prediction_status.json not found. Proceeding blindly...")
@@ -192,6 +193,19 @@ def generate_pdf(date_str):
     pdf_output_path = os.path.join(REPORT_DIR, f"VoltCast_Report_{date_str}.pdf")
     pdf.output(pdf_output_path)
     print(f"Report Generated: {pdf_output_path}")
+    # ── SEND SUCCESSFUL PAYLOAD TO CLIENTS ──
+    from alerts import send_pipeline_alert
+    send_pipeline_alert(
+        stage="DELIVERY",
+        subject=f"VoltCast D+1 Market Intelligence: {data['delivery_date']}",
+        body=(
+            f"The VoltCast IPI pipeline has successfully generated the D+1 forecast for {data['delivery_date']}.\n\n"
+            f"Daily Verdict: {summary['day_verdict']}\n"
+            f"Expected Average: EUR {summary['price_outlook']['expected_avg_eur_mwh']}/MWh\n\n"
+            f"Please find your PDF report and JSON API payload attached."
+        ),
+        attachments=[pdf_output_path, json_path]
+    )
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

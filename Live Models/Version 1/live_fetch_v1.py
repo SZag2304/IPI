@@ -32,6 +32,7 @@ from entsoe import EntsoePandasClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 import config
+from alerts import send_pipeline_alert
 
 # This single line finds your .env file and loads the variables into the system environment
 load_dotenv()
