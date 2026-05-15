@@ -5,6 +5,8 @@ import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+from dotenv import load_dotenv  # <-- ADD THIS
+load_dotenv()                   # <-- ADD THIS
 
 log = logging.getLogger("VoltCast.Alerts")
 
@@ -13,7 +15,7 @@ def send_pipeline_alert(stage: str, subject: str, body: str, attachments: list =
     # Use your environment variables (e.g. from .env)
     host = os.environ.get("VOLTCAST_SMTP_HOST", "")
     user = os.environ.get("VOLTCAST_SMTP_USER", "")
-    to   = os.environ.get("VOLTCAST_ALERT_TO", "")
+    to   = os.environ.get("VOLTCAST_ALERT_EMAIL", "")
     
     if not host or not to:
         log.warning(f"[{stage}] No SMTP configured — alert is log-only: {subject}")
