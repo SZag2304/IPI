@@ -147,13 +147,13 @@ def generate_pdf(date_str):
     if summary.get('buy_windows'):
         for window in summary['buy_windows']:
             pdf.set_text_color(0, 100, 0) # Green
-            pdf.cell(0, 5, f"- BUY WINDOW: {window['start_local']} to {window['end_local']} (Avg: EUR {window['avg_forecast_eur_mwh']})", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 5, f"- BUY WINDOW: {window['start_local']} to {window['end_local']} ({window['duration_hours']} hours | Avg: EUR {window['avg_forecast_eur_mwh']})", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     
     # Render Avoid Windows 
     if summary.get('avoid_windows'):
         for window in summary['avoid_windows']:
             pdf.set_text_color(200, 0, 0) # Red
-            pdf.cell(0, 5, f"- AVOID WINDOW: {window['start_local']} to {window['end_local']} (Avg: EUR {window['avg_forecast_eur_mwh']})", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 5, f"- AVOID WINDOW: {window['start_local']} to {window['end_local']} ({window['duration_hours']} hours | Avg: EUR {window['avg_forecast_eur_mwh']})", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if not summary.get('buy_windows') and not summary.get('avoid_windows'):
         pdf.set_text_color(100, 100, 100)
