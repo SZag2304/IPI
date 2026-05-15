@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from fpdf import FPDF, XPos, YPos  
 import config
+from datetime import datetime, timedelta
 
 DUTCH_TZ = "Europe/Amsterdam"
 
@@ -98,7 +99,9 @@ def generate_pdf(date_str):
         print("Warning: prediction_status.json not found. Proceeding blindly...")
 
     # ── PROCEED WITH GENERATION ──
-    json_path = os.path.join(LIVE_DIR, f"predictions_{date_str}.json")
+    now_dutch    = pd.Timestamp.now(tz=DUTCH_TZ)
+    PRED_DATE_STR = (now_dutch + timedelta(days=1)).strftime("%Y%m%d")
+    json_path = os.path.join(LIVE_DIR, f"predictions_{PRED_DATE_STR}.json")
     
     if not os.path.exists(json_path):
         print(f"Error: Could not find prediction file {json_path}")

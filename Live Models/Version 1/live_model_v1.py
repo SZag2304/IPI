@@ -39,6 +39,7 @@ import pandas as pd
 import xgboost as xgb
 import lightgbm as lgb
 import config
+from datetime import datetime, timedelta
 
 warnings.filterwarnings("ignore")
 
@@ -49,6 +50,7 @@ warnings.filterwarnings("ignore")
 DUTCH_TZ     = "Europe/Amsterdam"
 now_dutch    = pd.Timestamp.now(tz=DUTCH_TZ)
 RUN_DATE_STR = now_dutch.strftime("%Y%m%d")
+PRED_DATE_STR = (now_dutch + timedelta(days=1)).strftime("%Y%m%d")
 
 # UPDATED DIRECTORIES
 LOG_DIR     = "voltcast_ipi_logs_v1"
@@ -72,8 +74,8 @@ logging.basicConfig(
 log = logging.getLogger("VoltCast.Predict")
 
 # Output paths
-PREDICTIONS_PARQUET = os.path.join(LIVE_DIR, f"predictions_{RUN_DATE_STR}.parquet")
-PREDICTIONS_JSON    = os.path.join(LIVE_DIR, f"predictions_{RUN_DATE_STR}.json")
+PREDICTIONS_PARQUET = os.path.join(LIVE_DIR, f"predictions_{PRED_DATE_STR}.parquet")
+PREDICTIONS_JSON    = os.path.join(LIVE_DIR, f"predictions_{PRED_DATE_STR}.json")
 PRED_STATUS_FILE    = os.path.join(LIVE_DIR, "prediction_status.json")
 
 
@@ -372,9 +374,9 @@ def build_day_summary(ptus: list, delivery_date: str,
     cheap_fraction = total_buys / len(ptus)
     expensive_fraction = total_avoids / len(ptus)
     
-    if cheap_fraction >= config.VERDICT_CHEAP_FRAC_MIN:
+    if cheap_fraction >= config.VERDICT_CHEAP_FRAC_MIN and cheap_fraction > expensive_fraction:
         day_verdict = "BUY"
-    elif expensive_fraction >= config.VERDICT_EXP_FRAC_MIN:
+    elif expensive_fraction >= config.VERDICT_EXP_FRAC_MIN and expensive_fraction > cheap_fraction:
         day_verdict = "AVOID"
     else:
         day_verdict = "NEUTRAL"
