@@ -70,10 +70,18 @@ def calculate_metrics():
     print("Fetching actual Day-Ahead prices from ENTSO-E (NL)...")
     try:
         actual_series = client.query_day_ahead_prices('NL', start=start, end=end)
+        
+        # ── THE FIX: Force strict Dutch Timezone before extracting the hour ──
+        if actual_series.index.tz is None:
+            actual_series.index = actual_series.index.tz_localize('UTC').tz_convert(DUTCH_TZ)
+        else:
+            actual_series.index = actual_series.index.tz_convert(DUTCH_TZ)
+            
         # Isolate just the 24 hours of the target day
         actual_series = actual_series[actual_series.index.date == start.date()]
         df_actual = actual_series.to_frame(name='actual_price')
         df_actual['hour'] = df_actual.index.hour
+        
     except Exception as e:
         msg = f"Failed to fetch actual prices from ENTSO-E: {e}"
         print(f"[ERROR] {msg}")
@@ -82,6 +90,10 @@ def calculate_metrics():
 
     # 4. Merge Predictions and Actuals
     df = pd.merge(df_pred, df_actual, on='hour', how='inner')
+
+    print("\n[DEBUG] Timezone Alignment Check (First 3 Hours):")
+    print(df[['hour', pred_col, 'actual_price']].head(3))
+    print("-" * 40)
     
     if len(df) == 0:
         msg = "Merge failed: Could not align prediction hours with actual hours."
