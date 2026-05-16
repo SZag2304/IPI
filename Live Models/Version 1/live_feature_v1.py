@@ -858,6 +858,10 @@ def run_live_features() -> int:
         from alerts import send_pipeline_alert
         send_pipeline_alert("FEATURE", "Feature engineering failed",
                             f"Delivery {delivery_date}\nAlerts: {alerts}")
+    else:
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("FEATURE", f"Feature Engineering OK: {delivery_date}",
+                            f"Successfully engineered {X_d1.shape[1]} features for {len(X_d1)} PTUs.")
 
     log.info("\n" + "=" * 65)
     log.info("  FEATURE ENGINEERING COMPLETE")

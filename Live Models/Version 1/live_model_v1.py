@@ -883,6 +883,11 @@ def run_live_predict() -> int:
         from alerts import send_pipeline_alert
         send_pipeline_alert("PREDICT", "Prediction pipeline failed", 
                             f"Delivery {delivery_date}\nAlerts: {alerts}")
+    # (ADD THIS SUCCESS BLOCK)
+    else:
+        from alerts import send_pipeline_alert
+        send_pipeline_alert("MODEL", f"Model Inference OK: {delivery_date}",
+                            f"Successfully generated DA price predictions.\nVerdict: {summary['day_verdict']}\nExp Avg: EUR {summary['price_outlook']['expected_avg_eur_mwh']}/MWh")
 
     return 0 if overall_pass else 1
 
