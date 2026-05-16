@@ -21,9 +21,11 @@ def calculate_metrics():
     # 1. Define the Target Date (We validate YESTERDAY's delivery)
     tz = pytz.timezone(DUTCH_TZ)
     yesterday = datetime.now(tz) - timedelta(days=1)
-    target_date_str = yesterday.strftime('%Y%m%d')
-    target_date_iso = yesterday.strftime('%Y-%m-%d')
-    
+    '''target_date_str = yesterday.strftime('%Y%m%d')
+    target_date_iso = yesterday.strftime('%Y-%m-%d')'''
+    target_date_str = "20260517"
+    target_date_iso = "2026-05-17"
+
     print(f"Target Delivery Date: {target_date_iso}")
 
     # 2. Load the Predictions from your LIVE directory JSON
