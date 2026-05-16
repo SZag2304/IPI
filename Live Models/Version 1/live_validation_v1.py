@@ -92,7 +92,7 @@ def calculate_metrics():
     df = pd.merge(df_pred, df_actual, on='hour', how='inner')
 
     print("\n[DEBUG] Timezone Alignment Check (First 3 Hours):")
-    print(df[['hour', pred_col, 'actual_price']].head(3))
+    print(df[['hour', pred_col, 'actual_price']].head(8))
     print("-" * 40)
     
     if len(df) == 0:
