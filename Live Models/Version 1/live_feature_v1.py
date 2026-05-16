@@ -53,7 +53,13 @@ log = logging.getLogger("VoltCast.Features")
 # 1. CONFIGURATION
 # ================================================================================
 
-LIVE_DIR       = "voltcast_ipi_live_v1"
+# --- Directories ---
+# --- DUAL-BASIS DIAGNOSTIC SETUP ---
+# If 'evening' is passed in the terminal, divert all data to the evening sandbox
+RUN_MODE = "evening" if len(sys.argv) > 1 and sys.argv[1] == "evening" else "morning"
+LIVE_DIR = "voltcast_ipi_live_v1_evening" if RUN_MODE == "evening" else "voltcast_ipi_live_v1"
+os.makedirs(LIVE_DIR, exist_ok=True)
+#LIVE_DIR       = "voltcast_ipi_live_v1"
 CACHE_DIR      = "voltcast_ipi_cache_v1"
 FETCH_STATUS   = os.path.join(LIVE_DIR, "fetch_status.json")
 FEATURES_FILE  = os.path.join(LIVE_DIR, f"live_features_{RUN_DATE_STR}.parquet")

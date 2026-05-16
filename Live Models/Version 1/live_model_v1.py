@@ -53,8 +53,14 @@ RUN_DATE_STR = now_dutch.strftime("%Y%m%d")
 PRED_DATE_STR = (now_dutch + timedelta(days=1)).strftime("%Y%m%d")
 
 # UPDATED DIRECTORIES
+# --- Directories ---
+# --- DUAL-BASIS DIAGNOSTIC SETUP ---
+# If 'evening' is passed in the terminal, divert all data to the evening sandbox
+RUN_MODE = "evening" if len(sys.argv) > 1 and sys.argv[1] == "evening" else "morning"
+LIVE_DIR = "voltcast_ipi_live_v1_evening" if RUN_MODE == "evening" else "voltcast_ipi_live_v1"
+os.makedirs(LIVE_DIR, exist_ok=True)
 LOG_DIR     = "voltcast_ipi_logs_v1"
-LIVE_DIR    = "voltcast_ipi_live_v1"
+#LIVE_DIR    = "voltcast_ipi_live_v1"
 CACHE_DIR   = "voltcast_ipi_cache_v1"
 
 for d in [LOG_DIR, LIVE_DIR]:

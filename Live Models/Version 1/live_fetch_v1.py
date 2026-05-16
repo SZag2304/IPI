@@ -93,8 +93,14 @@ MASTER_INDEX_HOURLY = pd.date_range(
 # The model targets D+1 delivery rows only (see validate_delivery_day_coverage).
 
 # --- Directories ---
+# --- DUAL-BASIS DIAGNOSTIC SETUP ---
+# If 'evening' is passed in the terminal, divert all data to the evening sandbox
+RUN_MODE = "evening" if len(sys.argv) > 1 and sys.argv[1] == "evening" else "morning"
+LIVE_DIR = "voltcast_ipi_live_v1_evening" if RUN_MODE == "evening" else "voltcast_ipi_live_v1"
+os.makedirs(LIVE_DIR, exist_ok=True)
+
 CACHE_DIR   = "voltcast_ipi_cache_v1"
-LIVE_DIR    = "voltcast_ipi_live_v1"
+#LIVE_DIR    = "voltcast_ipi_live_v1"
 LOG_DIR     = "voltcast_ipi_logs_v1"
 for d in [CACHE_DIR, LIVE_DIR, LOG_DIR]:
     os.makedirs(d, exist_ok=True)
