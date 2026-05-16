@@ -88,10 +88,14 @@ def calculate_metrics():
         send_pipeline_alert("VALIDATION", "Validation Aborted: ENTSO-E API Error", msg)
         return
 
-    # 4. Merge Predictions and Actuals
-    df = pd.merge(df_pred, df_actual, on='hour', how='inner')
-
-    print("\n[DEBUG] Timezone Alignment Check (First 3 Hours):")
+# 4. Merge Predictions and Actuals
+    # ── THE FIX: Force both datasets into exactly 24 hourly averages before merging ──
+    df_pred_hourly = df_pred.groupby('hour', as_index=False)[pred_col].mean()
+    df_actual_hourly = df_actual.groupby('hour', as_index=False)['actual_price'].mean()
+    
+    df = pd.merge(df_pred_hourly, df_actual_hourly, on='hour', how='inner')
+    
+    print("\n[DEBUG] Clean Hourly Alignment Check (First 8 Hours):")
     print(df[['hour', pred_col, 'actual_price']].head(8))
     print("-" * 40)
     
