@@ -54,7 +54,7 @@ def calculate_metrics():
         df_evening.rename(columns={'forecast_p50': 'pred_evening'}, inplace=True)
 
     # 2. Fetch Actuals
-    api_key = os.environ.get('ENTSOE_TOKEN')
+    api_key = os.environ.get('VOLTCAST_ENTSOE_KEY')
     client = EntsoePandasClient(api_key=api_key)
     start = pd.Timestamp(target_date_iso, tz=DUTCH_TZ)
     end = start + pd.Timedelta(days=1)
