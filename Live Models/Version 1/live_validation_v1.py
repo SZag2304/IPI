@@ -95,7 +95,7 @@ def calculate_metrics():
     hits_morn = len(set(actual_top_4).intersection(set(pred_top_4_morn)))
     peak_prec_morn = (hits_morn / 4.0) * 100
 
-    mae_eve, mbe_eve, dir_acc_eve, spike_mae_eve, peak_prec_eve = None, None, None
+    mae_eve, mbe_eve, dir_acc_eve, spike_mae_eve, peak_prec_eve = None, None, None, None, None
     if df_evening is not None and 'pred_evening' in df.columns:
         df['err_evening'] = df['pred_evening'] - df['actual_price']
         mae_eve = df['err_evening'].abs().mean()
