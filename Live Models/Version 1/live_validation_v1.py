@@ -85,18 +85,36 @@ def calculate_metrics():
     
     dir_acc_morn = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_morning'].diff())).mean() * 100
 
-    mae_eve, mbe_eve, dir_acc_eve = None, None, None
+    # --- ADVANCED METRICS: Morning ---
+    spike_threshold = 100
+    df_spikes = df[df['actual_price'] > spike_threshold]
+    spike_mae_morn = df_spikes['err_morning'].abs().mean() if not df_spikes.empty else 0.0
+
+    actual_top_4 = df.nlargest(4, 'actual_price')['hour'].tolist()
+    pred_top_4_morn = df.nlargest(4, 'pred_morning')['hour'].tolist()
+    hits_morn = len(set(actual_top_4).intersection(set(pred_top_4_morn)))
+    peak_prec_morn = (hits_morn / 4.0) * 100
+
+    mae_eve, mbe_eve, dir_acc_eve, spike_mae_eve, peak_prec_eve = None, None, None
     if df_evening is not None and 'pred_evening' in df.columns:
         df['err_evening'] = df['pred_evening'] - df['actual_price']
         mae_eve = df['err_evening'].abs().mean()
         mbe_eve = df['err_evening'].mean()
         dir_acc_eve = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_evening'].diff())).mean() * 100
 
+        # --- ADVANCED METRICS: Evening ---
+        spike_mae_eve = df_spikes['err_evening'].abs().mean() if not df_spikes.empty else 0.0
+        pred_top_4_eve = df.nlargest(4, 'pred_evening')['hour'].tolist()
+        hits_eve = len(set(actual_top_4).intersection(set(pred_top_4_eve)))
+        peak_prec_eve = (hits_eve / 4.0) * 100
+
     # 5. Log and Alert
     print(f"\n--- PERFORMANCE: {target_date_iso} ---")
     print(f"Morning MAE (Production): {mae_morn:.2f}  |  MBE: {mbe_morn:.2f}  |  DirAcc: {dir_acc_morn:.1f}%")
+    print(f"Morning Spike MAE: {spike_mae_morn:.2f}  |  Peak Precision: {peak_prec_morn:.1f}%")
     if mae_eve is not None:
         print(f"Evening MAE (Diagnostic): {mae_eve:.2f}  |  MBE: {mbe_eve:.2f}  |  DirAcc: {dir_acc_eve:.1f}%")
+        print(f"Evening Spike MAE: {spike_mae_eve:.2f}  |  Peak Precision: {peak_prec_eve:.1f}%")
         data_drift = mae_morn - mae_eve
         print(f"Data Drift (Morning MAE - Evening MAE): {data_drift:.2f} EUR")
 
@@ -109,23 +127,31 @@ def calculate_metrics():
         'mbe_morning': round(mbe_morn, 2),
         'mbe_evening': round(mbe_eve, 2) if mbe_eve else np.nan,
         'dir_acc_morn': round(dir_acc_morn, 1),
-        'dir_acc_eve': round(dir_acc_eve, 1) if dir_acc_eve else np.nan
+        'dir_acc_eve': round(dir_acc_eve, 1) if dir_acc_eve else np.nan,
+        'spike_mae_morn': round(spike_mae_morn, 2),
+        'spike_mae_eve': round(spike_mae_eve, 2) if mae_eve else np.nan,
+        'peak_prec_morn': round(peak_prec_morn, 1),
+        'peak_prec_eve': round(peak_prec_eve, 1) if mae_eve else np.nan
     }])
     new_row.to_csv(ledger_path, mode='a', header=not os.path.exists(ledger_path), index=False)
 
     email_body = (
         f"VoltCast Dual-Basis Validation: {target_date_iso}\n\n"
-        f"--- PRODUCTION RUN (10:10 AM) ---\n"
-        f"MAE: {mae_morn:.2f} EUR/MWh\n"
-        f"MBE: {mbe_morn:.2f} EUR/MWh\n"
-        f"Directional Accuracy: {dir_acc_morn:.1f}%\n\n"
+        f"--- PRODUCTION RUN (09:15 AM) ---\n"
+        f"Overall MAE:           {mae_morn:.2f} EUR/MWh\n"
+        f"Mean Bias Error (MBE): {mbe_morn:.2f} EUR/MWh\n"
+        f"Spike MAE (>€100):     {spike_mae_morn:.2f} EUR/MWh\n"
+        f"Directional Accuracy:  {dir_acc_morn:.1f}%\n"
+        f"Peak Precision:        {peak_prec_morn:.1f}%\n\n"
     )
     if mae_eve is not None:
         email_body += (
-            f"--- DIAGNOSTIC RUN (18:00 PM) ---\n"
-            f"MAE: {mae_eve:.2f} EUR/MWh\n"
-            f"MBE: {mbe_eve:.2f} EUR/MWh\n"
-            f"Directional Accuracy: {dir_acc_eve:.1f}%\n\n"
+            f"--- DIAGNOSTIC RUN (18:30 PM) ---\n"
+            f"Overall MAE:           {mae_eve:.2f} EUR/MWh\n"
+            f"Mean Bias Error (MBE): {mbe_eve:.2f} EUR/MWh\n"
+            f"Spike MAE (>€100):     {spike_mae_eve:.2f} EUR/MWh\n"
+            f"Directional Accuracy:  {dir_acc_eve:.1f}%\n"
+            f"Peak Precision:        {peak_prec_eve:.1f}%\n\n"
             f"DATA DRIFT IMPACT: {mae_morn - mae_eve:.2f} EUR/MWh\n"
             f"(Positive number = afternoon weather updates improved accuracy)"
         )
