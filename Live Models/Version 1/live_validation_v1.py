@@ -103,6 +103,7 @@ def calculate_metrics():
         dir_acc_eve = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_evening'].diff())).mean() * 100
 
         # --- ADVANCED METRICS: Evening ---
+        df_spikes = df[df['actual_price'] > spike_threshold]
         spike_mae_eve = df_spikes['err_evening'].abs().mean() if not df_spikes.empty else 0.0
         pred_top_4_eve = df.nlargest(4, 'pred_evening')['hour'].tolist()
         hits_eve = len(set(actual_top_4).intersection(set(pred_top_4_eve)))
