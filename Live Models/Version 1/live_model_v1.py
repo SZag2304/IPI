@@ -201,6 +201,9 @@ SEASON_MAP = {1:"Win",2:"Win",3:"Spr",4:"Spr",5:"Spr",
 BLEND_W_XGB = 0.50
 BLEND_W_LGB = 0.50
 
+# ── LEVEL 1 DEFENSE PROTOCOL: STATIC BIAS TRACKER ──
+# This scalar is added to every hour of the final prediction
+STATIC_BIAS_OFFSET = 12.0
 
 def symlog(x):
     return np.sign(x) * np.log1p(np.abs(x))
@@ -209,7 +212,7 @@ def symlog_inv(x):
     return np.sign(x) * (np.expm1(np.abs(x)))
 
 
-def run_point_forecast(X: pd.DataFrame, artefacts: dict) -> np.ndarray:
+def run_point_forecast(X: pd.DataFrame, artefacts: dict) -> tuple:
     """
     Runs the XGB + LGB ensemble point forecast and applies bias correction.
     Returns corrected P50 values in EUR/MWh.
@@ -234,12 +237,17 @@ def run_point_forecast(X: pd.DataFrame, artefacts: dict) -> np.ndarray:
     corrections = np.clip(corrections, -15.0, 15.0)
 
     # Apply the vectorized corrections array to the raw predictions
-    pred_p50 = pred_raw + corrections
+    pred_p50_raw = pred_raw + corrections
+
+    # 2. The Corrected Prediction (Level 1 Defense Protocol)
+    pred_p50_corrected = pred_p50_raw + STATIC_BIAS_OFFSET
     
-    log.info(f"  Point forecast: EUR{pred_p50.mean():.2f}/MWh mean  "
-             f"(range EUR{pred_p50.min():.1f}–EUR{pred_p50.max():.1f})")
+    log.info(f"  Point forecast (RAW): EUR{pred_p50_raw.mean():.2f}/MWh mean  "
+             f"(range EUR{pred_p50_raw.min():.1f}–EUR{pred_p50_raw.max():.1f})")
+    log.info(f"  Point forecast (Corrected + EUR{STATIC_BIAS_OFFSET}): EUR{pred_p50_corrected.mean():.2f}/MWh mean  "
+             f"(range EUR{pred_p50_corrected.min():.1f}–EUR{pred_p50_corrected.max():.1f})")
     
-    return pred_p50
+    return pred_p50_raw, pred_p50_corrected
 
 
 def run_conformal_intervals(pred_p50: np.ndarray, artefacts: dict) -> tuple:
@@ -307,7 +315,7 @@ def run_classifier(X: pd.DataFrame, artefacts: dict) -> tuple:
 # 4. CLIENT OUTPUT BUILDER
 # ================================================================================
 
-def build_ptus_output(X: pd.DataFrame, pred_p50: np.ndarray,
+def build_ptus_output(X: pd.DataFrame, pred_p50_raw: np.ndarray, pred_p50_corrected: np.ndarray,
                        pred_p10: np.ndarray, pred_p90: np.ndarray,
                        regime: np.ndarray, proba: np.ndarray,
                        delivery_date: str) -> list:
@@ -342,7 +350,11 @@ def build_ptus_output(X: pd.DataFrame, pred_p50: np.ndarray,
             "timestamp_utc":    ts.isoformat(),
             "timestamp_local":  ts_dutch.strftime("%Y-%m-%d %H:%M"),
             "hour_local":       int(ts_dutch.hour),
-            "forecast_p50":     round(float(pred_p50[i]), 2),
+            
+            # ── DUAL TRACKING FIELDS ──
+            "forecast_p50_raw": round(float(pred_p50_raw[i]), 2),
+            "forecast_p50":     round(float(pred_p50_corrected[i]), 2), # Client facing
+            
             "forecast_p10":     round(float(pred_p10[i]), 2),
             "forecast_p90":     round(float(pred_p90[i]), 2),
             "interval_width":   round(float(pred_p90[i] - pred_p10[i]), 2),
@@ -419,7 +431,7 @@ def build_day_summary(ptus: list, delivery_date: str,
         "schema_version":   config.SCHEMA_VERSION,    # ── THE NEW SCHEMA GUARD ──
         "delivery_date":    delivery_date,
         "generated_at":     now_dutch.strftime("%Y-%m-%d %H:%M CET"),
-        "model_version":    "VoltCast IPI v2.1 — Physics Bridge",
+        "model_version":    "VoltCast IPI v2.1 — Physics Bridge (Corrected)",
 
         # ── PRIMARY CLIENT SIGNAL ──────────────────────────────────────
         "day_verdict": day_verdict,
@@ -788,11 +800,11 @@ def run_live_predict() -> int:
 
     # Point forecast + bias correction
     log.info("  Running point forecast (XGB + LGB + bias)...")
-    pred_p50 = run_point_forecast(X, artefacts)
+    pred_p50_raw, pred_p50_corrected = run_point_forecast(X, artefacts)
 
     # Conformal intervals
     log.info("  Computing conformal intervals...")
-    pred_p10, pred_p90 = run_conformal_intervals(pred_p50, artefacts)
+    pred_p10, pred_p90 = run_conformal_intervals(pred_p50_corrected, artefacts)
 
     # Regime classifier
     log.info("  Running regime classifier (XGB + LGB + thresholds)...")
@@ -802,7 +814,7 @@ def run_live_predict() -> int:
     log.info("\n[OUTPUT] Building client forecast...")
 
     # Per-PTU output
-    ptus = build_ptus_output(X, pred_p50, pred_p10, pred_p90, regime, proba, delivery_date)
+    ptus = build_ptus_output(X, pred_p50_raw, pred_p50_corrected, pred_p10, pred_p90, regime, proba, delivery_date)
 
     # Day summary (with d1_confirmed injected)
     summary = build_day_summary(ptus, delivery_date, artefacts)
@@ -817,7 +829,8 @@ def run_live_predict() -> int:
     # --- Save parquet (internal — full numerical record) ---
     df_pred = pd.DataFrame({
         "timestamp_utc":  X.index,
-        "pred_p50":       pred_p50,
+        "pred_p50_raw":   pred_p50_raw,
+        "pred_p50":       pred_p50_corrected,
         "pred_p10":       pred_p10,
         "pred_p90":       pred_p90,
         "regime":         regime,

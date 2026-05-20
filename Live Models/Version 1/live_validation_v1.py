@@ -29,12 +29,19 @@ def load_predictions(directory, date_str):
         df['timestamp_local'] = pd.to_datetime(df['timestamp_local'])
         df['hour'] = df['timestamp_local'].dt.hour
         # Aggregate to strictly 24 hours just like before
-        return df.groupby('hour', as_index=False)['forecast_p50'].mean()
+        # Check if this JSON has the new dual-tracking variables
+        if 'forecast_p50_raw' in df.columns:
+            return df.groupby('hour', as_index=False)[['forecast_p50_raw', 'forecast_p50']].mean()
+        else:
+            # Fallback for older JSONs
+            df_fallback = df.groupby('hour', as_index=False)['forecast_p50'].mean()
+            df_fallback['forecast_p50_raw'] = df_fallback['forecast_p50'] 
+            return df_fallback
     except KeyError:
         return None
 
 def calculate_metrics():
-    print("Starting VoltCast Dual-Basis Validation...")
+    print("Starting VoltCast 2x2 Master Validation...")
     tz = pytz.timezone(DUTCH_TZ)
     yesterday = datetime.now(tz) - timedelta(days=1)
     target_date_str = yesterday.strftime('%Y%m%d')
@@ -49,9 +56,9 @@ def calculate_metrics():
         return
 
     # Rename columns to keep them distinct
-    df_morning.rename(columns={'forecast_p50': 'pred_morning'}, inplace=True)
+    df_morning.rename(columns={'forecast_p50_raw': 'pred_morn_raw', 'forecast_p50': 'pred_morn_corr'}, inplace=True)
     if df_evening is not None:
-        df_evening.rename(columns={'forecast_p50': 'pred_evening'}, inplace=True)
+        df_evening.rename(columns={'forecast_p50_raw': 'pred_eve_raw', 'forecast_p50': 'pred_eve_corr'}, inplace=True)
 
     # 2. Fetch Actuals
     api_key = os.environ.get('VOLTCAST_ENTSOE_KEY')
@@ -78,86 +85,119 @@ def calculate_metrics():
     if df_evening is not None:
         df = pd.merge(df, df_evening, on='hour', how='left')
 
-    # 4. Calculate Diagnostics
-    df['err_morning'] = df['pred_morning'] - df['actual_price']
-    mae_morn = df['err_morning'].abs().mean()
-    mbe_morn = df['err_morning'].mean()
+    # 4. Calculate Diagnostics: MORNING
+    # Morning Raw
+    df['err_morn_raw'] = df['pred_morn_raw'] - df['actual_price']
+    mae_morn_raw = df['err_morn_raw'].abs().mean()
+    mbe_morn_raw = df['err_morn_raw'].mean()
     
-    dir_acc_morn = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_morning'].diff())).mean() * 100
+    # Morning Corrected
+    df['err_morn_corr'] = df['pred_morn_corr'] - df['actual_price']
+    mae_morn_corr = df['err_morn_corr'].abs().mean()
+    mbe_morn_corr = df['err_morn_corr'].mean()
 
-    # --- ADVANCED METRICS: Morning ---
-    spike_threshold = 100
-    df_spikes = df[df['actual_price'] > spike_threshold]
-    spike_mae_morn = df_spikes['err_morning'].abs().mean() if not df_spikes.empty else 0.0
-
+    # Morning Shape (Constant scalar shift doesn't change shape, calculate once)
+    dir_acc_morn = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_morn_corr'].diff())).mean() * 100
     actual_top_4 = df.nlargest(4, 'actual_price')['hour'].tolist()
-    pred_top_4_morn = df.nlargest(4, 'pred_morning')['hour'].tolist()
+    pred_top_4_morn = df.nlargest(4, 'pred_morn_corr')['hour'].tolist()
     hits_morn = len(set(actual_top_4).intersection(set(pred_top_4_morn)))
     peak_prec_morn = (hits_morn / 4.0) * 100
 
-    mae_eve, mbe_eve, dir_acc_eve, spike_mae_eve, peak_prec_eve = None, None, None, None, None
-    if df_evening is not None and 'pred_evening' in df.columns:
-        df['err_evening'] = df['pred_evening'] - df['actual_price']
-        mae_eve = df['err_evening'].abs().mean()
-        mbe_eve = df['err_evening'].mean()
-        dir_acc_eve = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_evening'].diff())).mean() * 100
+    # Morning Spikes
+    spike_threshold = 100
+    df_spikes = df[df['actual_price'] > spike_threshold]
+    spike_mae_morn_raw = df_spikes['err_morn_raw'].abs().mean() if not df_spikes.empty else 0.0
+    spike_mae_morn_corr = df_spikes['err_morn_corr'].abs().mean() if not df_spikes.empty else 0.0
 
-        # --- ADVANCED METRICS: Evening ---
-        df_spikes = df[df['actual_price'] > spike_threshold]
-        spike_mae_eve = df_spikes['err_evening'].abs().mean() if not df_spikes.empty else 0.0
-        pred_top_4_eve = df.nlargest(4, 'pred_evening')['hour'].tolist()
+    # 5. Calculate Diagnostics: EVENING
+    mae_eve_raw, mbe_eve_raw, spike_mae_eve_raw = None, None, None
+    mae_eve_corr, mbe_eve_corr, spike_mae_eve_corr = None, None, None
+    dir_acc_eve, peak_prec_eve = None, None
+    
+    if df_evening is not None and 'pred_eve_corr' in df.columns:
+        # Evening Raw
+        df['err_eve_raw'] = df['pred_eve_raw'] - df['actual_price']
+        mae_eve_raw = df['err_eve_raw'].abs().mean()
+        mbe_eve_raw = df['err_eve_raw'].mean()
+
+        # Evening Corrected
+        df['err_eve_corr'] = df['pred_eve_corr'] - df['actual_price']
+        mae_eve_corr = df['err_eve_corr'].abs().mean()
+        mbe_eve_corr = df['err_eve_corr'].mean()
+
+        # Evening Shape
+        dir_acc_eve = (np.sign(df['actual_price'].diff()) == np.sign(df['pred_eve_corr'].diff())).mean() * 100
+        pred_top_4_eve = df.nlargest(4, 'pred_eve_corr')['hour'].tolist()
         hits_eve = len(set(actual_top_4).intersection(set(pred_top_4_eve)))
         peak_prec_eve = (hits_eve / 4.0) * 100
 
-    # 5. Log and Alert
-    print(f"\n--- PERFORMANCE: {target_date_iso} ---")
-    print(f"Morning MAE (Production): {mae_morn:.2f}  |  MBE: {mbe_morn:.2f}  |  DirAcc: {dir_acc_morn:.1f}%")
-    print(f"Morning Spike MAE: {spike_mae_morn:.2f}  |  Peak Precision: {peak_prec_morn:.1f}%")
-    if mae_eve is not None:
-        print(f"Evening MAE (Diagnostic): {mae_eve:.2f}  |  MBE: {mbe_eve:.2f}  |  DirAcc: {dir_acc_eve:.1f}%")
-        print(f"Evening Spike MAE: {spike_mae_eve:.2f}  |  Peak Precision: {peak_prec_eve:.1f}%")
-        data_drift = mae_morn - mae_eve
-        print(f"Data Drift (Morning MAE - Evening MAE): {data_drift:.2f} EUR")
+        # Evening Spikes
+        spike_mae_eve_raw = df_spikes['err_eve_raw'].abs().mean() if not df_spikes.empty else 0.0
+        spike_mae_eve_corr = df_spikes['err_eve_corr'].abs().mean() if not df_spikes.empty else 0.0
 
-    # Save to CSV
+    # 6. Console Output
+    print(f"\n--- PERFORMANCE: {target_date_iso} ---")
+    print("\n[ PRODUCTION RUN - 09:15 AM ]")
+    print(f"Shape -> DirAcc: {dir_acc_morn:.1f}% | Peak Precision: {peak_prec_morn:.1f}%")
+    print(f" RAW        -> MAE: {mae_morn_raw:.2f} | MBE: {mbe_morn_raw:.2f} | Spike MAE: {spike_mae_morn_raw:.2f}")
+    print(f" CORRECTED  -> MAE: {mae_morn_corr:.2f} | MBE: {mbe_morn_corr:.2f} | Spike MAE: {spike_mae_morn_corr:.2f}")
+
+    if df_evening is not None:
+        print("\n[ DIAGNOSTIC RUN - 18:30 PM ]")
+        print(f"Shape -> DirAcc: {dir_acc_eve:.1f}% | Peak Precision: {peak_prec_eve:.1f}%")
+        print(f" RAW        -> MAE: {mae_eve_raw:.2f} | MBE: {mbe_eve_raw:.2f} | Spike MAE: {spike_mae_eve_raw:.2f}")
+        print(f" CORRECTED  -> MAE: {mae_eve_corr:.2f} | MBE: {mbe_eve_corr:.2f} | Spike MAE: {spike_mae_eve_corr:.2f}")
+
+    # 7. Save to CSV
     ledger_path = os.path.join(REPORT_DIR, "performance_ledger.csv")
     new_row = pd.DataFrame([{
         'delivery_date': target_date_iso,
-        'mae_morning': round(mae_morn, 2),
-        'mae_evening': round(mae_eve, 2) if mae_eve else np.nan,
-        'mbe_morning': round(mbe_morn, 2),
-        'mbe_evening': round(mbe_eve, 2) if mbe_eve else np.nan,
         'dir_acc_morn': round(dir_acc_morn, 1),
-        'dir_acc_eve': round(dir_acc_eve, 1) if dir_acc_eve else np.nan,
-        'spike_mae_morn': round(spike_mae_morn, 2),
-        'spike_mae_eve': round(spike_mae_eve, 2) if mae_eve else np.nan,
         'peak_prec_morn': round(peak_prec_morn, 1),
-        'peak_prec_eve': round(peak_prec_eve, 1) if mae_eve else np.nan
+        'mae_morn_raw': round(mae_morn_raw, 2),
+        'mbe_morn_raw': round(mbe_morn_raw, 2),
+        'spike_morn_raw': round(spike_mae_morn_raw, 2),
+        'mae_morn_corr': round(mae_morn_corr, 2),
+        'mbe_morn_corr': round(mbe_morn_corr, 2),
+        'spike_morn_corr': round(spike_mae_morn_corr, 2),
+        'dir_acc_eve': round(dir_acc_eve, 1) if df_evening is not None else np.nan,
+        'peak_prec_eve': round(peak_prec_eve, 1) if df_evening is not None else np.nan,
+        'mae_eve_raw': round(mae_eve_raw, 2) if df_evening is not None else np.nan,
+        'mbe_eve_raw': round(mbe_eve_raw, 2) if df_evening is not None else np.nan,
+        'mae_eve_corr': round(mae_eve_corr, 2) if df_evening is not None else np.nan,
+        'mbe_eve_corr': round(mbe_eve_corr, 2) if df_evening is not None else np.nan
     }])
     new_row.to_csv(ledger_path, mode='a', header=not os.path.exists(ledger_path), index=False)
 
+    # 8. Email Alert Formatting
     email_body = (
-        f"VoltCast Dual-Basis Validation: {target_date_iso}\n\n"
-        f"--- PRODUCTION RUN (09:15 AM) ---\n"
-        f"Overall MAE:           {mae_morn:.2f} EUR/MWh\n"
-        f"Mean Bias Error (MBE): {mbe_morn:.2f} EUR/MWh\n"
-        f"Spike MAE (>€100):     {spike_mae_morn:.2f} EUR/MWh\n"
-        f"Directional Accuracy:  {dir_acc_morn:.1f}%\n"
-        f"Peak Precision:        {peak_prec_morn:.1f}%\n\n"
+        f"VoltCast 2x2 Master Validation: {target_date_iso}\n\n"
+        f"=== PRODUCTION RUN (09:15 AM) ===\n"
+        f"Directional Accuracy: {dir_acc_morn:.1f}%\n"
+        f"Peak Precision:       {peak_prec_morn:.1f}%\n"
+        f"• RAW MODEL:\n"
+        f"  MAE: {mae_morn_raw:.2f} | MBE: {mbe_morn_raw:.2f} | Spike MAE: {spike_mae_morn_raw:.2f}\n"
+        f"• CORRECTED MODEL (+12 EUR):\n"
+        f"  MAE: {mae_morn_corr:.2f} | MBE: {mbe_morn_corr:.2f} | Spike MAE: {spike_mae_morn_corr:.2f}\n\n"
     )
-    if mae_eve is not None:
+
+    if df_evening is not None:
         email_body += (
-            f"--- DIAGNOSTIC RUN (18:30 PM) ---\n"
-            f"Overall MAE:           {mae_eve:.2f} EUR/MWh\n"
-            f"Mean Bias Error (MBE): {mbe_eve:.2f} EUR/MWh\n"
-            f"Spike MAE (>€100):     {spike_mae_eve:.2f} EUR/MWh\n"
-            f"Directional Accuracy:  {dir_acc_eve:.1f}%\n"
-            f"Peak Precision:        {peak_prec_eve:.1f}%\n\n"
-            f"DATA DRIFT IMPACT: {mae_morn - mae_eve:.2f} EUR/MWh\n"
-            f"(Positive number = afternoon weather updates improved accuracy)"
+            f"=== DIAGNOSTIC RUN (18:30 PM) ===\n"
+            f"Directional Accuracy: {dir_acc_eve:.1f}%\n"
+            f"Peak Precision:       {peak_prec_eve:.1f}%\n"
+            f"• RAW MODEL:\n"
+            f"  MAE: {mae_eve_raw:.2f} | MBE: {mbe_eve_raw:.2f} | Spike MAE: {spike_mae_eve_raw:.2f}\n"
+            f"• CORRECTED MODEL (+12 EUR):\n"
+            f"  MAE: {mae_eve_corr:.2f} | MBE: {mbe_eve_corr:.2f} | Spike MAE: {spike_mae_eve_corr:.2f}\n"
         )
 
-    send_pipeline_alert("VALIDATION", f"Validation OK: {target_date_iso} (MAE: {mae_morn:.2f})", email_body, [ledger_path])
+    send_pipeline_alert(
+        "VALIDATION", 
+        f"Validation OK: {target_date_iso} (Corr. MAE: {mae_morn_corr:.2f})", 
+        email_body, 
+        [ledger_path]
+    )
 
 if __name__ == "__main__":
     calculate_metrics()

@@ -26,3 +26,8 @@ MIN_PTUS_AVOID_WINDOW = 4  # 1 hour
 # --- STRATIFICATION PROBABILITIES ---
 PROB_STRONG_SIGNAL   = 0.70
 PROB_MODERATE_SIGNAL = 0.55
+
+# --- BIAS CORRECTION PROTOCOL ---
+# Level 1 Defense: Manual offset applied to final predictions to counter structural baseline drift.
+MANUAL_BIAS_OFFSET = 12.00 
+# --------------------------------
