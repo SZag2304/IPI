@@ -109,7 +109,7 @@ def calculate_metrics():
     spike_mae_morn_raw = df_spikes['err_morn_raw'].abs().mean() if not df_spikes.empty else 0.0
     spike_mae_morn_corr = df_spikes['err_morn_corr'].abs().mean() if not df_spikes.empty else 0.0
 
-    # 5. Calculate Diagnostics: EVENING
+# 5. Calculate Diagnostics: EVENING
     mae_eve_raw, mbe_eve_raw, spike_mae_eve_raw = None, None, None
     mae_eve_corr, mbe_eve_corr, spike_mae_eve_corr = None, None, None
     dir_acc_eve, peak_prec_eve = None, None
@@ -130,6 +130,9 @@ def calculate_metrics():
         pred_top_4_eve = df.nlargest(4, 'pred_eve_corr')['hour'].tolist()
         hits_eve = len(set(actual_top_4).intersection(set(pred_top_4_eve)))
         peak_prec_eve = (hits_eve / 4.0) * 100
+
+        # ── THE FIX: Refresh the snapshot to include the new evening error columns ──
+        df_spikes = df[df['actual_price'] > spike_threshold]
 
         # Evening Spikes
         spike_mae_eve_raw = df_spikes['err_eve_raw'].abs().mean() if not df_spikes.empty else 0.0
