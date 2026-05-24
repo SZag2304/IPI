@@ -29,5 +29,5 @@ PROB_MODERATE_SIGNAL = 0.55
 
 # --- BIAS CORRECTION PROTOCOL ---
 # Level 1 Defense: Manual offset applied to final predictions to counter structural baseline drift.
-MANUAL_BIAS_OFFSET = 12.00 
+MANUAL_BIAS_OFFSET = 15.0 
 # --------------------------------
