@@ -203,7 +203,7 @@ BLEND_W_LGB = 0.50
 
 # ── LEVEL 1 DEFENSE PROTOCOL: STATIC BIAS TRACKER ──
 # This scalar is added to every hour of the final prediction
-STATIC_BIAS_OFFSET = 15
+STATIC_BIAS_OFFSET = 12
 
 def symlog(x):
     return np.sign(x) * np.log1p(np.abs(x))
