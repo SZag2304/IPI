@@ -180,7 +180,7 @@ def calculate_metrics():
         f"Peak Precision:       {peak_prec_morn:.1f}%\n"
         f"• RAW MODEL:\n"
         f"  MAE: {mae_morn_raw:.2f} | MBE: {mbe_morn_raw:.2f} | Spike MAE: {spike_mae_morn_raw:.2f}\n"
-        f"• CORRECTED MODEL (+12 EUR):\n"
+        f"• CORRECTED MODEL (+14.5 EUR):\n"
         f"  MAE: {mae_morn_corr:.2f} | MBE: {mbe_morn_corr:.2f} | Spike MAE: {spike_mae_morn_corr:.2f}\n\n"
     )
 
@@ -191,7 +191,7 @@ def calculate_metrics():
             f"Peak Precision:       {peak_prec_eve:.1f}%\n"
             f"• RAW MODEL:\n"
             f"  MAE: {mae_eve_raw:.2f} | MBE: {mbe_eve_raw:.2f} | Spike MAE: {spike_mae_eve_raw:.2f}\n"
-            f"• CORRECTED MODEL (+12 EUR):\n"
+            f"• CORRECTED MODEL (+14.5 EUR):\n"
             f"  MAE: {mae_eve_corr:.2f} | MBE: {mbe_eve_corr:.2f} | Spike MAE: {spike_mae_eve_corr:.2f}\n"
         )
 
