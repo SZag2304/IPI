@@ -550,10 +550,15 @@ def run_probes(m: pd.DataFrame) -> list:
             "GAP: |err| rises with DE wind — add DE national wind proxy (population/turbine-weighted) to Block C" if abs(r) > 0.12 else "No strong evidence in window")
     # P3 — TTF intraday lag (known issue 8.3)
     if "ttf_delta_1d" in base:
-        terc = pd.qcut(base["ttf_delta_1d"].abs(), 3, labels=["calm", "mid", "volatile"], duplicates="drop")
+        # FIX: Use labels=False so pandas dynamically handles reduced bin counts
+        terc = pd.qcut(base["ttf_delta_1d"].abs(), 3, labels=False, duplicates="drop")
         g = base.groupby(terc)["abs_err"].mean().round(2)
         spread = float(g.iloc[-1] - g.iloc[0]) if len(g) >= 2 else np.nan
-        add("P3", "TTF 48h live lag cost", f"MAE by |ΔTTF| tercile: {g.to_dict()} (spread €{spread:.2f})",
+        
+        # Format the dict so the report is still easy to read
+        bin_dict = {f"Bin_{int(k)}": v for k, v in g.to_dict().items()}
+        
+        add("P3", "TTF 48h live lag cost", f"MAE by |ΔTTF| severity: {bin_dict} (spread €{spread:.2f})",
             f"CONFIRMED: gas-move days cost ≈ €{spread:.2f}/MWh extra MAE — prioritise intraday TTF (ICE Endex)" if spread == spread and spread > 1.5 else "Lag cost small in this window")
     # P4 — NorNed / Nordic hydro (not fetched in live)
     if "no2_price" in base:
