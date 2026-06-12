@@ -713,6 +713,11 @@ def fetch_entsoe_transmission_outages() -> pd.DataFrame:
                         t1 = pd.Timestamp(row["end"]);   t1 = t1.tz_localize("UTC") if t1.tz is None else t1.tz_convert("UTC")
                         total.loc[(total.index >= t0) & (total.index < t1)] += q
             except Exception as e:
+                # Silently ignore the month if there are no outages
+                if type(e).__name__ == "NoMatchingDataError":
+                    continue
+                
+                # Log any other actual errors
                 if "404" not in str(e):
                     log.warning(f"  TX REMIT {fz}->{tz_} chunk {curr.date()}: {e}")
             curr = nxt
