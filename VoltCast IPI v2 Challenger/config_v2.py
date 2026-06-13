@@ -69,3 +69,15 @@ BIAS_TABLE_CLIP    = 15.0   # unchanged clip on the shape correction
 # --- P5: negative-hour emphasis in point-model sample weights (v1 -> v2) ---
 NEG_WEIGHT_XGB = 6.0   # was 4.0
 NEG_WEIGHT_LGB = 3.0   # was 2.0
+
+# ==============================================================================
+# V2 ABLATION ADDITIONS (E1, E2, E4)
+# ==============================================================================
+SPIKE_WEIGHT_XGB       = 3.0    # E1: Spike counterweight
+SPIKE_WEIGHT_LGB       = 2.0    # E1: Spike counterweight
+PRECISION_TARGET_CHEAP = 0.82   # E2: Broker bar for buy precision
+PRECISION_TARGET_EXP   = 0.84   # E2: Broker bar for avoid precision
+THRESHOLD_FLOOR        = 0.45   # E2: Lowest permissible probability threshold
+THRESHOLD_CEILING      = 0.90   # E2: Highest permissible probability threshold
+THRESHOLD_MIN_SUPPORT  = 200    # E2: Minimum CV hours behind a threshold
+BLEND_GRID             = [0.3, 0.4, 0.5, 0.6, 0.7]  # E4: XGB blend shares

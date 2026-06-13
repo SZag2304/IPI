@@ -1,10 +1,26 @@
-
-# STEP 1: S1 and S2 IMPLEMENTED FILE
+# STEP 1: S1 and S2 IMPLEMENTED FILE — v2.2 CHALLENGER RELEASE CANDIDATE
 """
 ================================================================================
- VOLTCAST IPI — MODEL TRAINING PIPELINE
+ VOLTCAST IPI — MODEL TRAINING PIPELINE (v2.2)
  Target: Netherlands EPEX Day-Ahead Price (EUR/MWh) — D+1 Forecast
 ================================================================================
+ v2.2 surgical edits on the v2.1 build (each tagged "v2.2 (E#)" inline):
+
+   E5 — Classifier calibration parity: LGB classifier fitted on the
+        calibration fold; thresholds tuned on the SAME 50/50 blended
+        probability used at inference. Classifier blend decoupled from
+        the point blend (E4 had leaked the 40/60 point weight into the
+        classifier while live blends 50/50 — train/serve mismatch).
+   E6 — Tuned point blend persisted to blend.json; model card updated.
+        live_model_v2 MUST read blend.json (see live_model_v2_2_edits.py).
+   E7 — Conformal offsets calibrated on INTERCEPT-ADJUSTED CV residuals
+        (walk-forward rolling level removed, warm-up days dropped) so the
+        interval stays centred as the live intercept drifts.
+   E8 — Threshold-tuning fallback now fails CONSERVATIVE (0.55/0.60) with
+        a CRITICAL log instead of a loose 0.50/0.45.
+   E9 — Stored pred_p10/p90 re-clamped against the final (level-corrected)
+        p50 so the scores parquet stays monotone.
+
  Three models trained from one feature matrix:
 
    Model 1 — Point forecast    XGBoost regression (reg:squarederror)
@@ -25,13 +41,15 @@
    Final model trained on full data minus last 6 months (holdout)
 
  Outputs:
-   voltcast_cache/model_point.json        XGBoost point forecast model
-   voltcast_cache/model_p10.json          Quantile P10 model
-   voltcast_cache/model_p90.json          Quantile P90 model
-   voltcast_cache/model_classifier.json   Regime classifier model
-   voltcast_cache/feature_names.txt       Feature list for inference
-   voltcast_cache/scaler_stats.parquet    Mean/std for monitoring
-   VoltCast_IPI_Scores.parquet            Full test set predictions + actuals
+   voltcast_ipi_cache_v2/model_point.json        XGBoost point forecast model
+   voltcast_ipi_cache_v2/model_p10.json          Quantile P10 model
+   voltcast_ipi_cache_v2/model_p90.json          Quantile P90 model
+   voltcast_ipi_cache_v2/model_classifier.json   Regime classifier model
+   voltcast_ipi_cache_v2/feature_names.txt       Feature list for inference
+   voltcast_ipi_cache_v2/blend.json              Tuned point-blend weight (E6)
+   voltcast_ipi_cache_v2/classifier_thresholds.json  Calibrated thresholds
+   voltcast_ipi_cache_v2/conformal_params.json   Intercept-adjusted offsets (E7)
+   VoltCast_IPI_Scores_v2.parquet                Full test set predictions + actuals
 ================================================================================
 """
 
@@ -101,8 +119,7 @@ SPIKE_THRESHOLD = 120.0
 PARAMS_POINT = {
     # Objective: squared error gives balanced treatment of normal + spike hours
     # Use reg:absoluteerror if you want to prioritise typical days over spikes
-    "objective":        "reg:squarederror",   # 🌟 FIX A: Pseudo-Huber Loss # removed squarederror reverted
-    #"huber_slope":      1.0,                      # 🌟 FIX A: Transition point
+    "objective":        "reg:squarederror",
     "tree_method":      "hist",
     "n_estimators":     1500,
     "learning_rate":    0.02,             # Low LR + high estimators = better generalisation
@@ -353,8 +370,6 @@ def price_metrics(y_true, y_pred, label: str = "") -> dict:
     return metrics
 
 
-#def regime_metrics(y_true, y_pred_proba, label: str = "") -> dict:
-#    y_pred = np.argmax(y_pred_proba, axis=1)
 def regime_metrics(y_true, y_pred, label: str = "") -> dict:
     acc    = accuracy_score(y_true, y_pred)
     f1     = f1_score(y_true, y_pred, average="macro", zero_division=0)
@@ -478,7 +493,19 @@ def run_walk_forward_cv(X_train, y_p_train, y_r_train):
                       eval_set=[(Xte, yte_r.loc[Xte.index])],
                       verbose=False)
         pred_proba = model_cls.predict_proba(Xte)
-        #m_cls = regime_metrics(yte_r.loc[Xte.index], pred_proba, f"Fold {fold_num} — Classifier")
+
+        # ── v2.2 (E5): CLASSIFIER CALIBRATION PARITY ─────────────────
+        # On the calibration fold (the last one), also fit the LightGBM
+        # classifier and blend 50/50, so the thresholds downstream are
+        # tuned on the SAME probability distribution used at inference.
+        # v2.1 calibrated on XGB-only probabilities — a calibration/
+        # inference mismatch.
+        if f is folds[-1]:
+            log.info("    [E5] Calibration fold — fitting LGB classifier for blended-proba threshold tuning...")
+            model_cls_lgb_cv = lgb.LGBMClassifier(**PARAMS_LGBM_CLASSIFIER)
+            model_cls_lgb_cv.fit(Xtr, ytr_r.loc[Xtr.index],
+                                 eval_set=[(Xte, yte_r.loc[Xte.index])])
+            pred_proba = 0.5 * pred_proba + 0.5 * model_cls_lgb_cv.predict_proba(Xte)
 
         # 🌟 FIX: Manually calculate the argmax labels here for the CV metrics
         pred_cv_regime = np.argmax(pred_proba, axis=1)
@@ -491,8 +518,6 @@ def run_walk_forward_cv(X_train, y_p_train, y_r_train):
         log.info(f"    Regime → Acc={m_cls['Accuracy']*100:.1f}%  "
               f"F1={m_cls['F1_macro']:.4f}  "
               f"BuyPrec={m_cls.get('Cheap_precision', 'n/a')}")
-
-        #cv_results.append({"point": m_pt, "classifier": m_cls})
 
         # 🌟 FIX 1: Save the out-of-sample true labels and probabilities
         cv_results.append({
@@ -583,10 +608,37 @@ def tune_blend_weight(p_xgb_oos, p_lgb_oos, y_oos, grid=(0.3, 0.4, 0.5, 0.6, 0.7
         log.info(f"  [Blend] Tuned XGB share to {best_w:.1f} (OOS MAE EUR{best_mae:.2f}/MWh)")
     return best_w
 
+# ═════════════════════════════════════════════════════════════════════
+# v2.2 (E7) — INTERCEPT-ADJUSTED CONFORMAL RESIDUALS
+# ═════════════════════════════════════════════════════════════════════
+def intercept_adjusted_residuals(cv_residuals: pd.Series,
+                                 window_days: int, min_days: int,
+                                 clip_eur: float):
+    """
+    v2.2 (E7): The live stack applies conformal offsets on top of a p50
+    that already carries the rolling adaptive intercept. The calibration
+    distribution must therefore have the same rolling level removed —
+    otherwise the +4.2 mean of the raw CV residuals is double-counted
+    in the interval centre and coverage drifts as the live intercept
+    diverges from that historical mean.
+
+    Walk-forward, zero look-ahead: the level for day d is the rolling
+    mean of daily-mean residuals over days <= d-1. Warm-up days (before
+    min_days of history exist) are DROPPED from calibration.
+    """
+    r = cv_residuals.sort_index()
+    daily_mean = r.groupby(r.index.normalize()).mean()
+    roll_level = (daily_mean.rolling(window_days, min_periods=min_days)
+                            .mean().shift(1)
+                            .clip(-clip_eur, clip_eur))
+    level_per_ptu = roll_level.reindex(r.index.normalize()).to_numpy()
+    keep = ~np.isnan(level_per_ptu)
+    adjusted = (r.to_numpy() - level_per_ptu)[keep]
+    return adjusted, int(len(r) - keep.sum())
+
 # ================================================================================
 # 5. FINAL MODEL TRAINING
 # ================================================================================
-#def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold):
 # 🌟 FIX 2A: Add the CV arguments
 def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold, cv_y_true=None, cv_pred_proba=None, cv_residuals=None, cv_y_true_pt=None, cv_pred_xgb=None, cv_pred_lgb=None):
     """
@@ -653,6 +705,22 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
     else:
         BLEND_W_XGB = 0.50
     BLEND_W_LGB = 1.0 - BLEND_W_XGB
+
+    # ── v2.2 (E6): PERSIST THE TUNED POINT BLEND ─────────────────────
+    # Without this, live_model_v2 runs the point ensemble at a hardcoded
+    # 50/50 while every holdout number was produced at the tuned weight —
+    # a silent train/serve mismatch. live_model_v2 must read blend.json.
+    with open(os.path.join(CACHE_DIR, "blend.json"), "w") as f:
+        json.dump({
+            "blend_w_xgb": float(BLEND_W_XGB),
+            "blend_w_lgb": float(BLEND_W_LGB),
+            "applies_to": "point forecast ONLY — classifier blend is fixed 50/50 (E5)",
+            "tuned_on": "last walk-forward CV fold (out-of-sample)",
+            "training_date": pd.Timestamp.now().isoformat(),
+        }, f, indent=2)
+    log.info(f"  [E6] Saved: {os.path.join(CACHE_DIR, 'blend.json')} "
+             f"(XGB {BLEND_W_XGB:.0%} / LGB {BLEND_W_LGB:.0%})")
+
     pred_point  = BLEND_W_XGB * pred_xgb + BLEND_W_LGB * pred_lgb
     predictions["pred_p50"]     = pred_point
     predictions["pred_p50_xgb"] = pred_xgb
@@ -731,14 +799,16 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
     proba_lgb = model_lgb_cls.predict_proba(X_hold)
     models["classifier_lgb"] = model_lgb_cls
 
-    # Ensemble: average probabilities
-    pred_proba  = BLEND_W_XGB * proba_xgb + BLEND_W_LGB * proba_lgb
+    # ── v2.2 (E5): classifier blend FIXED at 50/50, decoupled from the
+    # point blend. v2.1 applied the point-tuned 40/60 here, but (a) that
+    # weight was tuned on point-forecast MAE, not classification loss,
+    # and (b) live_model_v2 blends the classifiers 50/50 — applying 40/60
+    # in the holdout eval was a train/serve mismatch.
+    pred_proba  = 0.5 * proba_xgb + 0.5 * proba_lgb
 
     # ------------------------------------------------------------------
-    # 🌟 NEW OUT-OF-SAMPLE THRESHOLD TUNING LOGIC
+    # 🌟 OUT-OF-SAMPLE THRESHOLD TUNING (E2, calibrated on E5-blended proba)
     # ------------------------------------------------------------------
-    from sklearn.metrics import precision_recall_curve
-
     try:
         if cv_y_true is None or cv_pred_proba is None:
             raise ValueError("CV data is missing or too short.")
@@ -756,9 +826,13 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
         optimal_exp_thresh   = r_e["threshold"] if r_e else config.THRESHOLD_FLOOR
 
     except Exception as e:
-        log.info(f"\n  [Threshold Tuning] WARNING: Calibration skipped or failed ({str(e)}). Reverting to safe defaults.")
-        # Fallback if CV data is missing or sklearn math fails
-        optimal_cheap_thresh, optimal_exp_thresh = 0.50, 0.45
+        # v2.2 (E8): fail CONSERVATIVE, not loose. The old fallback
+        # (0.50, 0.45) set the avoid threshold BELOW the floor — a missing
+        # calibration file would have silently loosened the avoid signal.
+        log.critical(f"\n  [Threshold Tuning] Calibration skipped or failed ({str(e)}). "
+                     f"Falling back to CONSERVATIVE defaults (0.55 / 0.60) — "
+                     f"investigate before challenger launch.")
+        optimal_cheap_thresh, optimal_exp_thresh = 0.55, 0.60
 
     log.info(f"  [Threshold Tuning] Optimal Cheap: {optimal_cheap_thresh:.2f} | Optimal Exp: {optimal_exp_thresh:.2f}")
 
@@ -813,19 +887,6 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
             'dow':      X_train.index.dayofweek
         })
     
-
-    '''# 1. Learn the true out-of-sample structural bias from CV
-    if cv_residuals is not None and not cv_residuals.empty:
-        df_bias_train = pd.DataFrame({
-            'residual': cv_residuals.values,
-            'hour':     cv_residuals.index.hour,
-            'month':    cv_residuals.index.month,
-            'dow':      cv_residuals.index.dayofweek
-        })
-    else:
-        log.info("  [WARNING] No CV residuals provided. Bias table will be empty.")
-        df_bias_train = pd.DataFrame(columns=['residual', 'hour', 'month', 'dow'])'''
-    
     season_map = {1:'Win', 2:'Win', 3:'Spr', 4:'Spr', 5:'Spr',
                   6:'Sum', 7:'Sum', 8:'Sum', 9:'Aut', 10:'Aut', 11:'Aut', 12:'Win'}
     
@@ -852,16 +913,6 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
     log.info(f"  [Debiasing v2] level {global_level:+.2f} EUR/MWh removed (handled live by adaptive intercept); "
              f"{len(bias_table)} cells shrunk toward Season x Hour parents (K={_K})")
 
-    '''# 2. Apply the learned bias to the Holdout Set
-    df_bias_hold = pd.DataFrame({
-        'hour': X_hold.index.hour,
-        'month': X_hold.index.month
-    }, index=X_hold.index)
-    
-    df_bias_hold['season'] = df_bias_hold['month'].map(season_map)
-    df_bias_hold['dow'] = X_hold.index.dayofweek'''
-
-
     df_bias_hold = pd.DataFrame({
         'hour':  X_hold.index.hour,
         'month': X_hold.index.month,
@@ -879,9 +930,17 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
 
     pred_point_shape = pred_point + correction
     
-    # Simulate the live walk-forward intercept for FAIR holdout evaluation
+    # Simulate the live walk-forward intercept for FAIR holdout evaluation (E3)
     pred_point_fair = simulate_adaptive_intercept(pred_point_shape, y_p_hold, X_hold.index, bootstrap=global_level)
     predictions["pred_p50"] = pred_point_fair
+
+    # ── v2.2 (E9): re-clamp the STORED quantile columns against the
+    # final (level-corrected) p50. The earlier monotonicity pass ran
+    # against the pre-correction p50; after the intercept shifts p50 up
+    # by several EUR, the scores parquet would otherwise persist
+    # P10 > P50 rows and trip downstream quality gates / forensic checks.
+    predictions["pred_p10"] = np.minimum(predictions["pred_p10"].to_numpy(), pred_point_fair)
+    predictions["pred_p90"] = np.maximum(predictions["pred_p90"].to_numpy(), pred_point_fair)
     
     m_point_shape = price_metrics(y_p_hold, pred_point_shape.values, "Ensemble point (Shape Only - Artefact)")
     log.info(f"\n  ── HOLD OUT EVALUATION (SHAPE ONLY) ──")
@@ -910,17 +969,28 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
     m_point = price_metrics(y_p_hold, predictions["pred_p50"].values, "Final Blended Point Forecast")
 
     # ══════════════════════════════════════════════════════════════════
-    # 5F. ASYMMETRIC CONFORMAL PREDICTION (NEW)
+    # 5F. ASYMMETRIC CONFORMAL PREDICTION
     # ══════════════════════════════════════════════════════════════════
     m_conformal = {}
     if cv_residuals is not None and len(cv_residuals) > 0:
-        cal_resid = np.array(cv_residuals)
+        # v2.2 (E7): calibrate on INTERCEPT-ADJUSTED residuals — the live
+        # stack applies these offsets on top of a p50 that already carries
+        # the rolling level, so the calibration residuals must have that
+        # rolling level removed the same walk-forward way.
+        cal_resid, n_dropped = intercept_adjusted_residuals(
+            cv_residuals,
+            window_days=config.ADAPTIVE_BIAS_WINDOW_DAYS,
+            min_days=config.ADAPTIVE_BIAS_MIN_DAYS,
+            clip_eur=config.ADAPTIVE_BIAS_CLIP_EUR,
+        )
+        log.info(f"\n  [Conformal] Calibrating on {len(cal_resid):,} intercept-adjusted "
+                 f"CV residuals ({n_dropped:,} warm-up PTUs dropped)")
 
         # For an 80% coverage interval, we trim the bottom 10% and top 10% of errors
         p10_correction = np.percentile(cal_resid, 10) 
         p90_correction = np.percentile(cal_resid, 90)
 
-        log.info(f"\n  [Conformal] P10 offset: EUR{p10_correction:.2f} | P90 offset: EUR{p90_correction:.2f}")
+        log.info(f"  [Conformal] P10 offset: EUR{p10_correction:.2f} | P90 offset: EUR{p90_correction:.2f}")
 
         # Apply the asymmetric corrections
         pred_p10_conformal = predictions["pred_p50"] + p10_correction
@@ -938,9 +1008,10 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
         conformal_params = {
             "p10_offset":    float(p10_correction),
             "p90_offset":    float(p90_correction),
+            "calibration":   "intercept-adjusted CV residuals (v2.2 E7)",
             "coverage":      round(float(m_conformal.get("Coverage_80pct", 0)), 4),
             "avg_width_eur": round(float(m_conformal.get("Avg_Width_EUR", 0)), 2),
-            "n_calibration": len(cal_resid),
+            "n_calibration": int(len(cal_resid)),
             "training_date": pd.Timestamp.now().isoformat(),
         }
         with open(os.path.join(CACHE_DIR, "conformal_params.json"), "w") as f:
@@ -950,23 +1021,24 @@ def train_final_models(X_train, y_p_train, y_r_train, X_hold, y_p_hold, y_r_hold
 
     # ══════════════════════════════════════════════════════════════════
 
-    # 🌟 NEW: Save the optimal thresholds to a JSON file
-    thresholds = {
-        "cheap_threshold":     float(optimal_cheap_thresh),
-        "expensive_threshold": float(optimal_exp_thresh),
-        "training_date":       pd.Timestamp.now().isoformat(),
-    }
-    with open(os.path.join(CACHE_DIR, "old_classifier_thresholds.json"), "w") as f:
-        json.dump(thresholds, f, indent=2)
-
-    # --- SAVE THRESHOLDS ---
+    # --- SAVE THRESHOLDS (single canonical file; the duplicate
+    # old_classifier_thresholds.json writer was removed in v2.2) ---
     try:
         threshold_path = os.path.join(CACHE_DIR, "classifier_thresholds.json")
+        payload = {
+            "cheap_threshold":     float(optimal_cheap_thresh),
+            "expensive_threshold": float(optimal_exp_thresh),
+            "training_date":       pd.Timestamp.now().isoformat(),
+        }
+        try:
+            # v2.2: persist the calibration evidence (precision, support,
+            # met_target) for the broker due-diligence audit trail.
+            payload["cheap_calibration"]     = r_c
+            payload["expensive_calibration"] = r_e
+        except NameError:
+            pass
         with open(threshold_path, "w") as f:
-            json.dump({
-                "cheap_threshold": optimal_cheap_thresh,
-                "expensive_threshold": optimal_exp_thresh
-            }, f, indent=2)
+            json.dump(payload, f, indent=2)
     except Exception as e:
         log.info(f"  [SAVE ERROR] Could not save classifier thresholds: {e}")
 
@@ -982,6 +1054,12 @@ def analyse_feature_importance(model_point, model_cls, feature_names: list):
     Extracts and prints feature importance from both models.
     Uses 'gain' (total information gain) — more reliable than 'weight' (split count).
     For the product: high-importance features = what's driving prices today.
+
+    v2.2 caveat: gain attribution is UNSTABLE within collinear clusters
+    (solar_proxy / renewable_surplus_index / weather_scarcity_index /
+    Nat_shortwave_radiation traded ~19,000 gain between runs). For
+    thesis/broker narratives, prefer the block-level totals below or
+    permutation importance; do not narrate single-feature gain ranks.
     """
     log.info("\n" + "="*65)
     log.info("  FEATURE IMPORTANCE ANALYSIS")
@@ -1143,21 +1221,33 @@ def save_all(models: dict, predictions: pd.DataFrame, feature_names: list):
     predictions.to_parquet(SCORES_FILE)
     log.info(f"  Saved: {SCORES_FILE}")
 
+    # v2.2 (E6): surface the tuned blend in the model card
+    blend_path = os.path.join(CACHE_DIR, "blend.json")
+    blend_meta = json.load(open(blend_path)) if os.path.exists(blend_path) else {"blend_w_xgb": 0.5}
+
     # Model card (human-readable summary)
     card_path = os.path.join(CACHE_DIR, "model_card.json")
     card = {
         "product": "VoltCast IPI",
-        "version": "Tier 2 v2 — forensic ablation build (P1, P3, P4, P5, P6, BIAS)",
+        "version": "Tier 2 v2.2 — challenger release candidate (P1, P3, P4, P5, P6, BIAS, E1-E9)",
         "target": TARGET_PRICE,
         "models": list(models.keys()),
         "n_features": len(feature_names),
+        "blend_w_xgb_point": blend_meta.get("blend_w_xgb", 0.5),
+        "classifier_blend": "fixed 50/50 (E5 — matches threshold calibration and live)",
+        "sample_weights": {
+            "neg_xgb": config.NEG_WEIGHT_XGB, "neg_lgb": config.NEG_WEIGHT_LGB,
+            "spike_xgb": config.SPIKE_WEIGHT_XGB, "spike_lgb": config.SPIKE_WEIGHT_LGB,
+        },
         "training_date": pd.Timestamp.now().isoformat(),
         "holdout_rows": len(predictions),
         "upgrades": [
             "I1: Symlog target transformation",
-            "I2: XGBoost + LightGBM ensemble (50/50 blend)",
+            "I2: XGBoost + LightGBM ensemble (point blend tuned on last OOS fold — see blend.json)",
             "V2: Nordic coupling (P4) + solar limb v2 / piecewise wind (P1) + negative-price block (P5)",
             "V2: TTF/EUA trained at D-2 close — exact live parity (P3, closes the EUR2.65/MWh skew)",
+            "V2.1: spike counterweight (E1), precision-first thresholds (E2), production-parity holdout eval (E3), tuned blend (E4)",
+            "V2.2: classifier calibration parity (E5), blend persistence (E6), intercept-adjusted conformal (E7), conservative fallbacks (E8), stored-quantile monotonicity (E9)",
             "I5: Quantile models tuned (2500 trees, LR 0.01, depth 5)",
         ],
         "notes": [
@@ -1166,6 +1256,7 @@ def save_all(models: dict, predictions: pd.DataFrame, feature_names: list):
             "Regime labels: 0=Cheap, 1=Normal, 2=Expensive (rolling 30-day P25/P75)",
             "Cron schedule: 10:10-11:00 CET — TSO-independent via Physics Bridge",
             "Bias table is SHAPE-ONLY (de-meaned, shrunk); level corrected live (adaptive intercept)",
+            "Holdout headline metrics are PRODUCTION-PARITY: shape table + walk-forward simulated intercept (E3)",
         ]
     }
     with open(card_path, "w") as f:
@@ -1225,7 +1316,7 @@ if __name__ == "__main__":
     log.info("\n" + "="*65)
     log.info("  TRAINING COMPLETE — HOLDOUT RESULTS")
     log.info("="*65)
-    log.info(f"\n  Point forecast:")
+    log.info(f"\n  Point forecast (PRODUCTION-PARITY: shape + simulated intercept):")
     print_metrics(m_point)
     log.info(f"\n  Uncertainty interval (conformal):")
     print_metrics(m_conformal)

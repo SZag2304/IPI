@@ -92,7 +92,9 @@ def parse_bias_table(path: str) -> dict:
 
     def norm_season(s):
         s = str(s).strip().strip("'\"").lower()
-        return s
+        # Map abbreviations to the full season names expected by the script
+        season_map = {"win": "winter", "spr": "spring", "sum": "summer", "aut": "autumn"}
+        return season_map.get(s, s)
 
     if isinstance(raw, dict) and raw and isinstance(next(iter(raw.values())), dict):
         for s, dows in raw.items():
@@ -280,7 +282,7 @@ def main():
                  f"e.g. {missing[:5]}")
 
     actual_lag96_full = df[tgt].shift(96)          # lag computed BEFORE slicing
-    hold = df[df.index >= pd.Timestamp(args.holdout_start)]
+    hold = df[df.index >= pd.Timestamp(args.holdout_start).tz_localize(df.index.tz)]
     print(f"  Holdout: {hold.index.min()} → {hold.index.max()}  "
           f"({len(hold):,} rows; expected 17,472)")
     X = hold[feat_names].astype(float)
