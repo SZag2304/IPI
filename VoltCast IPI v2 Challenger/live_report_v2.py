@@ -199,7 +199,7 @@ def generate_pdf(date_str):
         stage="DELIVERY",
         subject=f"VoltCast D+1 Market Intelligence: {data['delivery_date']}",
         body=(
-            f"The VoltCast IPI pipeline has successfully generated the D+1 forecast for {data['delivery_date']}.\n\n"
+            f"The VoltCast IPI v2 pipeline has successfully generated the D+1 forecast for {data['delivery_date']}.\n\n"
             f"Daily Verdict: {summary['day_verdict']}\n"
             f"Expected Average: EUR {summary['price_outlook']['expected_avg_eur_mwh']}/MWh\n\n"
             f"Please find your PDF report and JSON API payload attached."

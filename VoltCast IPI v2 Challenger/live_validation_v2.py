@@ -177,7 +177,7 @@ def calculate_metrics(target_date: str = None):
 
     # 8. Email Alert Formatting
     email_body = (
-        f"VoltCast 2x2 Master Validation: {target_date_iso}\n\n"
+        f"VoltCast v2 2x2 Master Validation: {target_date_iso}\n\n"
         f"=== PRODUCTION RUN (09:15 AM) ===\n"
         f"Directional Accuracy: {dir_acc_morn:.1f}%\n"
         f"Peak Precision:       {peak_prec_morn:.1f}%\n"
