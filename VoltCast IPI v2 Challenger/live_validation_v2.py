@@ -45,11 +45,15 @@ def calculate_metrics(target_date: str = None):
     defaults to yesterday — the last settled delivery day."""
     print("Starting VoltCast v2 Challenger Validation...")
     tz = pytz.timezone(DUTCH_TZ)
-    target = (datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
+    '''target = (datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
               if target_date else datetime.now(tz) - timedelta(days=1))
     target_date_str = target.strftime('%Y%m%d')
-    target_date_iso = target.strftime('%Y-%m-%d')
-    
+    target_date_iso = target.strftime('%Y-%m-%d')'''
+    yesterday = datetime.now(tz) - timedelta(days=1)
+    target_date_str = yesterday.strftime('%Y%m%d')
+    target_date_iso = yesterday.strftime('%Y-%m-%d')
+
+
     # 1. Load Morning and Evening Predictions
     df_morning = load_predictions(MORNING_DIR, target_date_str)
     df_evening = load_predictions(EVENING_DIR, target_date_str)
