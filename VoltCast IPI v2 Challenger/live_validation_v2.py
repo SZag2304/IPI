@@ -216,4 +216,4 @@ def calculate_metrics():
     )
 
 if __name__ == "__main__":
-    calculate_metrics(sys.argv[1] if len(sys.argv) > 1 else None)
+    calculate_metrics()
