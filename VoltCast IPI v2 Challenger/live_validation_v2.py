@@ -40,26 +40,32 @@ def load_predictions(directory, date_str):
     except KeyError:
         return None
 
-def calculate_metrics(target_date: str = None):
+'''def calculate_metrics(target_date: str = None):
     """target_date: optional 'YYYY-MM-DD' (v2: enables backfilling missed days);
     defaults to yesterday — the last settled delivery day."""
     print("Starting VoltCast v2 Challenger Validation...")
     tz = pytz.timezone(DUTCH_TZ)
-    '''target = (datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
+    target = (datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
               if target_date else datetime.now(tz) - timedelta(days=1))
     target_date_str = target.strftime('%Y%m%d')
     target_date_iso = target.strftime('%Y-%m-%d')'''
+def calculate_metrics():
+    print("Starting VoltCast v2 Challenger Validation...")
+    tz = pytz.timezone(DUTCH_TZ)
     yesterday = datetime.now(tz) - timedelta(days=1)
     target_date_str = yesterday.strftime('%Y%m%d')
     target_date_iso = yesterday.strftime('%Y-%m-%d')
-
+    
+    # 1. Load Morning and Evening Predictions
+    df_morning = load_predictions(MORNING_DIR, target_date_str)
+    df_evening = load_predictions(EVENING_DIR, target_date_str)
 
     # 1. Load Morning and Evening Predictions
     df_morning = load_predictions(MORNING_DIR, target_date_str)
     df_evening = load_predictions(EVENING_DIR, target_date_str)
 
     if df_morning is None:
-        send_pipeline_alert("VALIDATION", "Validation Aborted", f"Missing Morning JSON for {target_date_str}")
+        send_pipeline_alert("VALIDATION", "Validation Aborted", f"Missing Morning JSON v2 for {target_date_str}")
         return
 
     # Rename columns to keep them distinct
