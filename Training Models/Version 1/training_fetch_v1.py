@@ -62,7 +62,7 @@ ENTSOE_API_KEY = os.environ.get("VOLTCAST_ENTSOE_KEY")
 # --- Time Range (Dutch local time → converted to UTC internally) ---
 DUTCH_TZ         = "Europe/Amsterdam"
 START_LOCAL      = pd.Timestamp("2023-01-01 00:00:00", tz=DUTCH_TZ)
-END_LOCAL        = pd.Timestamp("2026-04-01 00:00:00", tz=DUTCH_TZ)
+END_LOCAL        = pd.Timestamp("2026-07-01 00:00:00", tz=DUTCH_TZ)
 
 # --- Internal UTC backbone ---
 START_UTC        = START_LOCAL.tz_convert("UTC")
